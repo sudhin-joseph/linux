@@ -28,10 +28,6 @@ struct mpc8xxx_spi {
 	/* rx & tx bufs from the spi_transfer */
 	const void *tx;
 	void *rx;
-#if IS_ENABLED(CONFIG_SPI_FSL_ESPI)
-	int len;
-	u8 *local_buf;
-#endif
 
 	int subblock;
 	struct spi_pram __iomem *pram;
@@ -99,8 +95,10 @@ static inline u32 mpc8xxx_spi_read_reg(__be32 __iomem *reg)
 
 struct mpc8xxx_spi_probe_info {
 	struct fsl_spi_platform_data pdata;
+	int ngpios;
 	int *gpios;
 	bool *alow_flags;
+	__be32 __iomem *immr_spi_cs;
 };
 
 extern u32 mpc8xxx_spi_tx_buf_u8(struct mpc8xxx_spi *mpc8xxx_spi);

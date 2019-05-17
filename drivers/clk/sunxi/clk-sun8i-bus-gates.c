@@ -18,6 +18,7 @@
  */
 
 #include <linux/clk-provider.h>
+#include <linux/io.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/slab.h>
@@ -78,6 +79,10 @@ static void __init sun8i_h3_bus_gates_init(struct device_node *node)
 			clk_parent = APB1;
 		else if (index >= 96 && index <= 127)
 			clk_parent = APB2;
+		else {
+			WARN_ON(true);
+			continue;
+		}
 
 		clk_reg = reg + 4 * (index / 32);
 		clk_bit = index % 32;

@@ -43,11 +43,12 @@
 #include "net.h"
 #include "socket.h"
 #include "bcast.h"
+#include "node.h"
 
 #include <linux/module.h>
 
 /* configurable TIPC parameters */
-int tipc_net_id __read_mostly;
+unsigned int tipc_net_id __read_mostly;
 int sysctl_tipc_rmem[3] __read_mostly;	/* min/default/max */
 
 static int __net_init tipc_init_net(struct net *net)
@@ -56,7 +57,12 @@ static int __net_init tipc_init_net(struct net *net)
 	int err;
 
 	tn->net_id = 4711;
-	tn->own_addr = 0;
+	tn->node_addr = 0;
+	tn->trial_addr = 0;
+	tn->addr_trial_end = 0;
+	tn->capabilities = TIPC_NODE_CAPABILITIES;
+	memset(tn->node_id, 0, sizeof(tn->node_id));
+	memset(tn->node_id_string, 0, sizeof(tn->node_id_string));
 	tn->mon_threshold = TIPC_DEF_MON_THRESHOLD;
 	get_random_bytes(&tn->random, sizeof(int));
 	INIT_LIST_HEAD(&tn->node_list);

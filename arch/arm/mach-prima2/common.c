@@ -8,14 +8,14 @@
 
 #include <linux/init.h>
 #include <linux/kernel.h>
-#include <asm/sizes.h>
+#include <linux/sizes.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
 #include "common.h"
 
-static void __init sirfsoc_init_late(void)
+static void __init __maybe_unused sirfsoc_init_late(void)
 {
 	sirfsoc_pm_init();
 }

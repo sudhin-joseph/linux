@@ -175,9 +175,9 @@ static int sh_wdt_set_heartbeat(struct watchdog_device *wdt_dev, unsigned t)
 	return 0;
 }
 
-static void sh_wdt_ping(unsigned long data)
+static void sh_wdt_ping(struct timer_list *t)
 {
-	struct sh_wdt *wdt = (struct sh_wdt *)data;
+	struct sh_wdt *wdt = from_timer(wdt, t, timer);
 	unsigned long flags;
 
 	spin_lock_irqsave(&wdt->lock, flags);
@@ -220,7 +220,6 @@ static struct watchdog_device sh_wdt_dev = {
 static int sh_wdt_probe(struct platform_device *pdev)
 {
 	struct sh_wdt *wdt;
-	struct resource *res;
 	int rc;
 
 	/*
@@ -245,8 +244,7 @@ static int sh_wdt_probe(struct platform_device *pdev)
 		wdt->clk = NULL;
 	}
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	wdt->base = devm_ioremap_resource(wdt->dev, res);
+	wdt->base = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(wdt->base))
 		return PTR_ERR(wdt->base);
 
@@ -275,7 +273,7 @@ static int sh_wdt_probe(struct platform_device *pdev)
 		return rc;
 	}
 
-	setup_timer(&wdt->timer, sh_wdt_ping, (unsigned long)wdt);
+	timer_setup(&wdt->timer, sh_wdt_ping, 0);
 	wdt->timer.expires	= next_ping_period(clock_division_ratio);
 
 	dev_info(&pdev->dev, "initialized.\n");

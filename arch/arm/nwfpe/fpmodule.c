@@ -31,7 +31,7 @@
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/signal.h>
-#include <linux/sched.h>
+#include <linux/sched/signal.h>
 #include <linux/init.h>
 
 #include <asm/thread_notify.h>
@@ -147,7 +147,7 @@ void float_raise(signed char flags)
 #ifdef CONFIG_DEBUG_USER
 	if (flags & debug)
  		printk(KERN_DEBUG
-		       "NWFPE: %s[%d] takes exception %08x at %pf from %08lx\n",
+		       "NWFPE: %s[%d] takes exception %08x at %ps from %08lx\n",
 		       current->comm, current->pid, flags,
 		       __builtin_return_address(0), GET_USERREG()->ARM_pc);
 #endif

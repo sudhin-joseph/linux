@@ -31,6 +31,22 @@
 #include "rt2x00.h"
 #include "rt2x00usb.h"
 
+static bool rt2x00usb_check_usb_error(struct rt2x00_dev *rt2x00dev, int status)
+{
+	if (status == -ENODEV || status == -ENOENT)
+		return true;
+
+	if (status == -EPROTO || status == -ETIMEDOUT)
+		rt2x00dev->num_proto_errs++;
+	else
+		rt2x00dev->num_proto_errs = 0;
+
+	if (rt2x00dev->num_proto_errs > 3)
+		return true;
+
+	return false;
+}
+
 /*
  * Interfacing with the HW.
  */
@@ -57,7 +73,7 @@ int rt2x00usb_vendor_request(struct rt2x00_dev *rt2x00dev,
 		if (status >= 0)
 			return 0;
 
-		if (status == -ENODEV) {
+		if (rt2x00usb_check_usb_error(rt2x00dev, status)) {
 			/* Device has disappeared. */
 			clear_bit(DEVICE_STATE_PRESENT, &rt2x00dev->flags);
 			break;
@@ -145,7 +161,7 @@ int rt2x00usb_regbusy_read(struct rt2x00_dev *rt2x00dev,
 		return -ENODEV;
 
 	for (i = 0; i < REGISTER_USB_BUSY_COUNT; i++) {
-		rt2x00usb_register_read_lock(rt2x00dev, offset, reg);
+		*reg = rt2x00usb_register_read_lock(rt2x00dev, offset);
 		if (!rt2x00_get_field32(*reg, field))
 			return 1;
 		udelay(REGISTER_BUSY_DELAY);
@@ -319,11 +335,9 @@ static bool rt2x00usb_kick_tx_entry(struct queue_entry *entry, void *data)
 			  entry->skb->data, length,
 			  rt2x00usb_interrupt_txdone, entry);
 
-	usb_anchor_urb(entry_priv->urb, rt2x00dev->anchor);
 	status = usb_submit_urb(entry_priv->urb, GFP_ATOMIC);
 	if (status) {
-		usb_unanchor_urb(entry_priv->urb);
-		if (status == -ENODEV)
+		if (rt2x00usb_check_usb_error(rt2x00dev, status))
 			clear_bit(DEVICE_STATE_PRESENT, &rt2x00dev->flags);
 		set_bit(ENTRY_DATA_IO_FAILED, &entry->flags);
 		rt2x00lib_dmadone(entry);
@@ -410,11 +424,9 @@ static bool rt2x00usb_kick_rx_entry(struct queue_entry *entry, void *data)
 			  entry->skb->data, entry->skb->len,
 			  rt2x00usb_interrupt_rxdone, entry);
 
-	usb_anchor_urb(entry_priv->urb, rt2x00dev->anchor);
 	status = usb_submit_urb(entry_priv->urb, GFP_ATOMIC);
 	if (status) {
-		usb_unanchor_urb(entry_priv->urb);
-		if (status == -ENODEV)
+		if (rt2x00usb_check_usb_error(rt2x00dev, status))
 			clear_bit(DEVICE_STATE_PRESENT, &rt2x00dev->flags);
 		set_bit(ENTRY_DATA_IO_FAILED, &entry->flags);
 		rt2x00lib_dmadone(entry);
@@ -517,7 +529,7 @@ void rt2x00usb_flush_queue(struct data_queue *queue, bool drop)
 		 * Wait for a little while to give the driver
 		 * the oppurtunity to recover itself.
 		 */
-		msleep(10);
+		msleep(50);
 	}
 }
 EXPORT_SYMBOL_GPL(rt2x00usb_flush_queue);
@@ -744,6 +756,11 @@ void rt2x00usb_uninitialize(struct rt2x00_dev *rt2x00dev)
 {
 	struct data_queue *queue;
 
+	usb_kill_anchored_urbs(rt2x00dev->anchor);
+	hrtimer_cancel(&rt2x00dev->txstatus_timer);
+	cancel_work_sync(&rt2x00dev->rxdone_work);
+	cancel_work_sync(&rt2x00dev->txdone_work);
+
 	queue_for_each(rt2x00dev, queue)
 		rt2x00usb_free_entries(queue);
 }
@@ -824,10 +841,6 @@ int rt2x00usb_probe(struct usb_interface *usb_intf,
 	if (retval)
 		goto exit_free_device;
 
-	retval = rt2x00lib_probe_dev(rt2x00dev);
-	if (retval)
-		goto exit_free_reg;
-
 	rt2x00dev->anchor = devm_kmalloc(&usb_dev->dev,
 					sizeof(struct usb_anchor),
 					GFP_KERNEL);
@@ -835,9 +848,16 @@ int rt2x00usb_probe(struct usb_interface *usb_intf,
 		retval = -ENOMEM;
 		goto exit_free_reg;
 	}
-
 	init_usb_anchor(rt2x00dev->anchor);
+
+	retval = rt2x00lib_probe_dev(rt2x00dev);
+	if (retval)
+		goto exit_free_anchor;
+
 	return 0;
+
+exit_free_anchor:
+	usb_kill_anchored_urbs(rt2x00dev->anchor);
 
 exit_free_reg:
 	rt2x00usb_free_reg(rt2x00dev);

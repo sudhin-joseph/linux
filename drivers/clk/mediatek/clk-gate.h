@@ -36,6 +36,8 @@ static inline struct mtk_clk_gate *to_mtk_clk_gate(struct clk_hw *hw)
 
 extern const struct clk_ops mtk_clk_gate_ops_setclr;
 extern const struct clk_ops mtk_clk_gate_ops_setclr_inv;
+extern const struct clk_ops mtk_clk_gate_ops_no_setclr;
+extern const struct clk_ops mtk_clk_gate_ops_no_setclr_inv;
 
 struct clk *mtk_clk_register_gate(
 		const char *name,
@@ -45,6 +47,21 @@ struct clk *mtk_clk_register_gate(
 		int clr_ofs,
 		int sta_ofs,
 		u8 bit,
-		const struct clk_ops *ops);
+		const struct clk_ops *ops,
+		unsigned long flags);
+
+#define GATE_MTK_FLAGS(_id, _name, _parent, _regs, _shift,	\
+			_ops, _flags) {				\
+		.id = _id,					\
+		.name = _name,					\
+		.parent_name = _parent,				\
+		.regs = _regs,					\
+		.shift = _shift,				\
+		.ops = _ops,					\
+		.flags = _flags,				\
+	}
+
+#define GATE_MTK(_id, _name, _parent, _regs, _shift, _ops)		\
+	GATE_MTK_FLAGS(_id, _name, _parent, _regs, _shift, _ops, 0)
 
 #endif /* __DRV_CLK_GATE_H */

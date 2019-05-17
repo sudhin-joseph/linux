@@ -31,8 +31,7 @@ static ssize_t name##_show(struct device *dev,\
 			   struct device_attribute *attr,\
 			   char *buf)\
 {\
-	struct platform_device *pdev = to_platform_device(dev);\
-	struct acpi_device *acpi_dev = platform_get_drvdata(pdev);\
+	struct acpi_device *acpi_dev = dev_get_drvdata(dev);\
 	unsigned long long val;\
 	acpi_status status;\
 \
@@ -65,7 +64,7 @@ static struct attribute *dptf_power_attrs[] = {
 	NULL
 };
 
-static struct attribute_group dptf_power_attribute_group = {
+static const struct attribute_group dptf_power_attribute_group = {
 	.attrs = dptf_power_attrs,
 	.name = "dptf_power"
 };

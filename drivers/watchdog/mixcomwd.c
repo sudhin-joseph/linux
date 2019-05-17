@@ -99,13 +99,13 @@ static struct {
 	{0x0000, 0},
 };
 
-static void mixcomwd_timerfun(unsigned long d);
+static void mixcomwd_timerfun(struct timer_list *unused);
 
 static unsigned long mixcomwd_opened; /* long req'd for setbit --RR */
 
 static int watchdog_port;
 static int mixcomwd_timer_alive;
-static DEFINE_TIMER(mixcomwd_timer, mixcomwd_timerfun, 0, 0);
+static DEFINE_TIMER(mixcomwd_timer, mixcomwd_timerfun);
 static char expect_close;
 
 static bool nowayout = WATCHDOG_NOWAYOUT;
@@ -120,7 +120,7 @@ static void mixcomwd_ping(void)
 	return;
 }
 
-static void mixcomwd_timerfun(unsigned long d)
+static void mixcomwd_timerfun(struct timer_list *unused)
 {
 	mixcomwd_ping();
 	mod_timer(&mixcomwd_timer, jiffies + 5 * HZ);
@@ -150,7 +150,7 @@ static int mixcomwd_open(struct inode *inode, struct file *file)
 			mixcomwd_timer_alive = 0;
 		}
 	}
-	return nonseekable_open(inode, file);
+	return stream_open(inode, file);
 }
 
 static int mixcomwd_release(struct inode *inode, struct file *file)

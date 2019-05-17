@@ -80,8 +80,6 @@ struct ssbi {
 	int (*write)(struct ssbi *, u16 addr, const u8 *buf, int len);
 };
 
-#define to_ssbi(dev)	platform_get_drvdata(to_platform_device(dev))
-
 static inline u32 ssbi_readl(struct ssbi *ssbi, u32 reg)
 {
 	return readl(ssbi->base + reg);
@@ -243,7 +241,7 @@ err:
 
 int ssbi_read(struct device *dev, u16 addr, u8 *buf, int len)
 {
-	struct ssbi *ssbi = to_ssbi(dev);
+	struct ssbi *ssbi = dev_get_drvdata(dev);
 	unsigned long flags;
 	int ret;
 
@@ -257,7 +255,7 @@ EXPORT_SYMBOL_GPL(ssbi_read);
 
 int ssbi_write(struct device *dev, u16 addr, const u8 *buf, int len)
 {
-	struct ssbi *ssbi = to_ssbi(dev);
+	struct ssbi *ssbi = dev_get_drvdata(dev);
 	unsigned long flags;
 	int ret;
 
@@ -314,7 +312,7 @@ static int ssbi_probe(struct platform_device *pdev)
 
 	spin_lock_init(&ssbi->lock);
 
-	return of_platform_populate(np, NULL, NULL, &pdev->dev);
+	return devm_of_platform_populate(&pdev->dev);
 }
 
 static const struct of_device_id ssbi_match_table[] = {
