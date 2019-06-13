@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Per core/cpu state
  *
@@ -2384,7 +2385,11 @@ static int handle_pmi_common(struct pt_regs *regs, u64 status)
 	 */
 	if (__test_and_clear_bit(55, (unsigned long *)&status)) {
 		handled++;
-		intel_pt_interrupt();
+		if (unlikely(perf_guest_cbs && perf_guest_cbs->is_in_guest() &&
+			perf_guest_cbs->handle_intel_pt_intr))
+			perf_guest_cbs->handle_intel_pt_intr();
+		else
+			intel_pt_interrupt();
 	}
 
 	/*
