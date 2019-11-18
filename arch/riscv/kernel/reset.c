@@ -4,6 +4,7 @@
  */
 
 #include <linux/reboot.h>
+#include <linux/pm.h>
 #include <asm/sbi.h>
 
 static void default_power_off(void)
@@ -13,6 +14,7 @@ static void default_power_off(void)
 }
 
 void (*pm_power_off)(void) = default_power_off;
+EXPORT_SYMBOL(pm_power_off);
 
 void machine_restart(char *cmd)
 {
