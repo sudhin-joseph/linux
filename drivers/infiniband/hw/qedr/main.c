@@ -212,7 +212,7 @@ static const struct ib_device_ops qedr_dev_ops = {
 	.get_link_layer = qedr_link_layer,
 	.map_mr_sg = qedr_map_mr_sg,
 	.mmap = qedr_mmap,
-	.modify_port = qedr_modify_port,
+	.mmap_free = qedr_mmap_free,
 	.modify_qp = qedr_modify_qp,
 	.modify_srq = qedr_modify_srq,
 	.poll_cq = qedr_poll_cq,
@@ -357,9 +357,10 @@ static int qedr_alloc_resources(struct qedr_dev *dev)
 		return -ENOMEM;
 
 	spin_lock_init(&dev->sgid_lock);
+	xa_init_flags(&dev->srqs, XA_FLAGS_LOCK_IRQ);
 
 	if (IS_IWARP(dev)) {
-		xa_init_flags(&dev->qps, XA_FLAGS_LOCK_IRQ);
+		xa_init(&dev->qps);
 		dev->iwarp_wq = create_singlethread_workqueue("qedr_iwarpq");
 	}
 
@@ -631,7 +632,6 @@ static int qedr_set_device_attr(struct qedr_dev *dev)
 	attr->max_mr_size = qed_attr->max_mr_size;
 	attr->max_cqe = min_t(u64, qed_attr->max_cqe, QEDR_MAX_CQES);
 	attr->max_mw = qed_attr->max_mw;
-	attr->max_fmr = qed_attr->max_fmr;
 	attr->max_mr_mw_fmr_pbl = qed_attr->max_mr_mw_fmr_pbl;
 	attr->max_mr_mw_fmr_size = qed_attr->max_mr_mw_fmr_size;
 	attr->max_pd = qed_attr->max_pd;

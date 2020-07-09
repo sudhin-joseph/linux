@@ -624,6 +624,7 @@ struct i40e_hw {
 #define I40E_HW_FLAG_NVM_READ_REQUIRES_LOCK BIT_ULL(3)
 #define I40E_HW_FLAG_FW_LLDP_STOPPABLE      BIT_ULL(4)
 #define I40E_HW_FLAG_FW_LLDP_PERSISTENT     BIT_ULL(5)
+#define I40E_HW_FLAG_AQ_PHY_ACCESS_EXTENDED BIT_ULL(6)
 #define I40E_HW_FLAG_DROP_MODE              BIT_ULL(7)
 	u64 flags;
 
@@ -688,7 +689,7 @@ union i40e_32byte_rx_desc {
 		__le64  rsvd2;
 	} read;
 	struct {
-		struct {
+		struct i40e_32b_rx_wb_qw0 {
 			struct {
 				union {
 					__le16 mirroring_status;
@@ -726,6 +727,9 @@ union i40e_32byte_rx_desc {
 			} hi_dword;
 		} qword3;
 	} wb;  /* writeback */
+	struct {
+		u64 qword[4];
+	} raw;
 };
 
 enum i40e_rx_desc_status_bits {

@@ -29,7 +29,6 @@
 #define LTR_L1OFF_SNOOZE_SSPWRGATE_5249_DEF	0xAC
 #define LTR_L1OFF_SNOOZE_SSPWRGATE_5250_DEF	0xF8
 #define CMD_TIMEOUT_DEF		100
-#define ASPM_MASK_NEG		0xFC
 #define MASK_8_BIT_DEF		0xFF
 
 #define SSC_CLOCK_STABLE_WAIT	130
@@ -53,6 +52,7 @@ void rts524a_init_params(struct rtsx_pcr *pcr);
 void rts525a_init_params(struct rtsx_pcr *pcr);
 void rtl8411b_init_params(struct rtsx_pcr *pcr);
 void rts5260_init_params(struct rtsx_pcr *pcr);
+void rts5261_init_params(struct rtsx_pcr *pcr);
 
 static inline u8 map_sd_drive(int idx)
 {

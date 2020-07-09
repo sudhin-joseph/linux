@@ -1014,6 +1014,7 @@ static int ravb_phy_init(struct net_device *ndev)
 	struct ravb_private *priv = netdev_priv(ndev);
 	struct phy_device *phydev;
 	struct device_node *pn;
+	phy_interface_t iface;
 	int err;
 
 	priv->link = 0;
@@ -1032,8 +1033,13 @@ static int ravb_phy_init(struct net_device *ndev)
 		}
 		pn = of_node_get(np);
 	}
-	phydev = of_phy_connect(ndev, pn, ravb_adjust_link, 0,
-				priv->phy_interface);
+
+	iface = priv->phy_interface;
+	if (priv->chip_id != RCAR_GEN2 && phy_interface_mode_is_rgmii(iface)) {
+		/* ravb_set_delay_mode() takes care of internal delay mode */
+		iface = PHY_INTERFACE_MODE_RGMII;
+	}
+	phydev = of_phy_connect(ndev, pn, ravb_adjust_link, 0, iface);
 	of_node_put(pn);
 	if (!phydev) {
 		netdev_err(ndev, "failed to connect PHY\n");
@@ -1425,7 +1431,7 @@ out_napi_off:
 }
 
 /* Timeout function for Ethernet AVB */
-static void ravb_tx_timeout(struct net_device *ndev)
+static void ravb_tx_timeout(struct net_device *ndev, unsigned int txqueue)
 {
 	struct ravb_private *priv = netdev_priv(ndev);
 
@@ -2048,7 +2054,9 @@ static int ravb_probe(struct platform_device *pdev)
 	spin_lock_init(&priv->lock);
 	INIT_WORK(&priv->work, ravb_tx_timeout_work);
 
-	priv->phy_interface = of_get_phy_mode(np);
+	error = of_get_phy_mode(np, &priv->phy_interface);
+	if (error && error != -ENODEV)
+		goto out_release;
 
 	priv->no_avb_link = of_property_read_bool(np, "renesas,no-ether-link");
 	priv->avb_link_active_low =

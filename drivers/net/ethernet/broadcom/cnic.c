@@ -1918,7 +1918,6 @@ static int cnic_bnx2x_iscsi_ofld1(struct cnic_dev *dev, struct kwqe *wqes[],
 	ret = cnic_alloc_bnx2x_conn_resc(dev, l5_cid);
 	if (ret) {
 		atomic_dec(&cp->iscsi_conn);
-		ret = 0;
 		goto done;
 	}
 	ret = cnic_setup_bnx2x_ctx(dev, wqes, num);
@@ -5207,6 +5206,8 @@ static void cnic_init_rings(struct cnic_dev *dev)
 
 		cnic_init_bnx2x_tx_ring(dev, data);
 		cnic_init_bnx2x_rx_ring(dev, data);
+
+		data->general.fp_hsi_ver =  ETH_FP_HSI_VERSION;
 
 		l5_data.phy_address.lo = udev->l2_buf_map & 0xffffffff;
 		l5_data.phy_address.hi = (u64) udev->l2_buf_map >> 32;

@@ -21,6 +21,8 @@
 #include <linux/iio/iio.h>
 #include <linux/iio/sysfs.h>
 
+#include <asm/unaligned.h>
+
 #define MODE_PWRDWN_1k		0x1
 #define MODE_PWRDWN_100k	0x2
 #define MODE_PWRDWN_TRISTATE	0x3
@@ -31,6 +33,7 @@
  * @chip_info:		chip model specific constants, available modes etc
  * @reg:		supply regulator
  * @vref_mv:		actual reference voltage used
+ * @lock		lock to protect the data buffer during write ops
  */
 
 struct ad5446_state {
@@ -41,6 +44,7 @@ struct ad5446_state {
 	unsigned			cached_val;
 	unsigned			pwr_down_mode;
 	unsigned			pwr_down;
+	struct mutex			lock;
 };
 
 /**
@@ -110,7 +114,7 @@ static ssize_t ad5446_write_dac_powerdown(struct iio_dev *indio_dev,
 	if (ret)
 		return ret;
 
-	mutex_lock(&indio_dev->mlock);
+	mutex_lock(&st->lock);
 	st->pwr_down = powerdown;
 
 	if (st->pwr_down) {
@@ -121,7 +125,7 @@ static ssize_t ad5446_write_dac_powerdown(struct iio_dev *indio_dev,
 	}
 
 	ret = st->chip_info->write(st, val);
-	mutex_unlock(&indio_dev->mlock);
+	mutex_unlock(&st->lock);
 
 	return ret ? ret : len;
 }
@@ -195,11 +199,11 @@ static int ad5446_write_raw(struct iio_dev *indio_dev,
 			return -EINVAL;
 
 		val <<= chan->scan_type.shift;
-		mutex_lock(&indio_dev->mlock);
+		mutex_lock(&st->lock);
 		st->cached_val = val;
 		if (!st->pwr_down)
 			ret = st->chip_info->write(st, val);
-		mutex_unlock(&indio_dev->mlock);
+		mutex_unlock(&st->lock);
 		break;
 	default:
 		ret = -EINVAL;
@@ -254,6 +258,8 @@ static int ad5446_probe(struct device *dev, const char *name,
 	indio_dev->channels = &st->chip_info->channel;
 	indio_dev->num_channels = 1;
 
+	mutex_init(&st->lock);
+
 	st->pwr_down_mode = MODE_PWRDWN_1k;
 
 	if (st->chip_info->int_vref_mv)
@@ -302,9 +308,7 @@ static int ad5660_write(struct ad5446_state *st, unsigned val)
 	struct spi_device *spi = to_spi_device(st->dev);
 	uint8_t data[3];
 
-	data[0] = (val >> 16) & 0xFF;
-	data[1] = (val >> 8) & 0xFF;
-	data[2] = val & 0xFF;
+	put_unaligned_be24(val, &data[0]);
 
 	return spi_write(spi, data, sizeof(data));
 }
@@ -327,6 +331,7 @@ enum ad5446_supported_spi_device_ids {
 	ID_AD5541A,
 	ID_AD5512A,
 	ID_AD5553,
+	ID_AD5600,
 	ID_AD5601,
 	ID_AD5611,
 	ID_AD5621,
@@ -379,6 +384,10 @@ static const struct ad5446_chip_info ad5446_spi_chip_info[] = {
 	},
 	[ID_AD5553] = {
 		.channel = AD5446_CHANNEL(14, 16, 0),
+		.write = ad5446_write,
+	},
+	[ID_AD5600] = {
+		.channel = AD5446_CHANNEL(16, 16, 0),
 		.write = ad5446_write,
 	},
 	[ID_AD5601] = {
@@ -448,6 +457,7 @@ static const struct spi_device_id ad5446_spi_ids[] = {
 	{"ad5542a", ID_AD5541A}, /* ad5541a and ad5542a are compatible */
 	{"ad5543", ID_AD5541A}, /* ad5541a and ad5543 are compatible */
 	{"ad5553", ID_AD5553},
+	{"ad5600", ID_AD5600},
 	{"ad5601", ID_AD5601},
 	{"ad5611", ID_AD5611},
 	{"ad5621", ID_AD5621},

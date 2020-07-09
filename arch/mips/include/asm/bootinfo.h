@@ -42,17 +42,6 @@
 #define  MACH_DS5900		10	/* DECsystem 5900		*/
 
 /*
- * Valid machtype for group PMC-MSP
- */
-#define MACH_MSP4200_EVAL	0	/* PMC-Sierra MSP4200 Evaluation */
-#define MACH_MSP4200_GW		1	/* PMC-Sierra MSP4200 Gateway demo */
-#define MACH_MSP4200_FPGA	2	/* PMC-Sierra MSP4200 Emulation */
-#define MACH_MSP7120_EVAL	3	/* PMC-Sierra MSP7120 Evaluation */
-#define MACH_MSP7120_GW		4	/* PMC-Sierra MSP7120 Residential GW */
-#define MACH_MSP7120_FPGA	5	/* PMC-Sierra MSP7120 Emulation */
-#define MACH_MSP_OTHER	      255	/* PMC-Sierra unknown board type */
-
-/*
  * Valid machtype for group Mikrotik
  */
 #define MACH_MIKROTIK_RB532	0	/* Mikrotik RouterBoard 532	*/
@@ -61,7 +50,7 @@
 /*
  * Valid machtype for Loongson family
  */
-enum loongson_machine_type {
+enum loongson2ef_machine_type {
 	MACH_LOONGSON_UNKNOWN,
 	MACH_LEMOTE_FL2E,
 	MACH_LEMOTE_FL2F,
@@ -70,7 +59,6 @@ enum loongson_machine_type {
 	MACH_DEXXON_GDIUM2F10,
 	MACH_LEMOTE_NAS,
 	MACH_LEMOTE_LL2F,
-	MACH_LOONGSON_GENERIC,
 	MACH_LOONGSON_END
 };
 
@@ -82,6 +70,7 @@ enum loongson_machine_type {
 #define  MACH_INGENIC_JZ4770	2	/* JZ4770 SOC		*/
 #define  MACH_INGENIC_JZ4780	3	/* JZ4780 SOC		*/
 #define  MACH_INGENIC_X1000		4	/* X1000 SOC		*/
+#define  MACH_INGENIC_X1830		5	/* X1830 SOC		*/
 
 extern char *system_type;
 const char *get_system_type(void);
@@ -99,6 +88,7 @@ extern void detect_memory_region(phys_addr_t start, phys_addr_t sz_min,  phys_ad
 
 extern void prom_init(void);
 extern void prom_free_prom_memory(void);
+extern void prom_cleanup(void);
 
 extern void free_init_pages(const char *what,
 			    unsigned long begin, unsigned long end);
@@ -120,7 +110,7 @@ extern unsigned long fw_passed_dtb;
 #endif
 
 /*
- * Platform memory detection hook called by setup_arch
+ * Platform memory detection hook called by arch_mem_init()
  */
 extern void plat_mem_setup(void);
 

@@ -32,10 +32,10 @@
 #include <asm/daifflags.h>
 #include <asm/debug-monitors.h>
 #include <asm/esr.h>
-#include <asm/kasan.h>
+#include <asm/kprobes.h>
+#include <asm/processor.h>
 #include <asm/sysreg.h>
 #include <asm/system_misc.h>
-#include <asm/pgtable.h>
 #include <asm/tlbflush.h>
 #include <asm/traps.h>
 
@@ -101,18 +101,6 @@ static void mem_abort_decode(unsigned int esr)
 		data_abort_decode(esr);
 }
 
-static inline bool is_ttbr0_addr(unsigned long addr)
-{
-	/* entry assembly clears tags for TTBR0 addrs */
-	return addr < TASK_SIZE;
-}
-
-static inline bool is_ttbr1_addr(unsigned long addr)
-{
-	/* TTBR1 addresses may have a tag if KASAN_SW_TAGS is in use */
-	return arch_kasan_reset_tag(addr) >= PAGE_OFFSET;
-}
-
 static inline unsigned long mm_to_pgd_phys(struct mm_struct *mm)
 {
 	/* Either init_pg_dir or swapper_pg_dir */
@@ -156,6 +144,7 @@ static void show_pte(unsigned long addr)
 	pr_alert("[%016lx] pgd=%016llx", addr, pgd_val(pgd));
 
 	do {
+		p4d_t *p4dp, p4d;
 		pud_t *pudp, pud;
 		pmd_t *pmdp, pmd;
 		pte_t *ptep, pte;
@@ -163,7 +152,13 @@ static void show_pte(unsigned long addr)
 		if (pgd_none(pgd) || pgd_bad(pgd))
 			break;
 
-		pudp = pud_offset(pgdp, addr);
+		p4dp = p4d_offset(pgdp, addr);
+		p4d = READ_ONCE(*p4dp);
+		pr_cont(", p4d=%016llx", p4d_val(p4d));
+		if (p4d_none(p4d) || p4d_bad(p4d))
+			break;
+
+		pudp = pud_offset(p4dp, addr);
 		pud = READ_ONCE(*pudp);
 		pr_cont(", pud=%016llx", pud_val(pud));
 		if (pud_none(pud) || pud_bad(pud))
@@ -318,6 +313,8 @@ static void __do_kernel_fault(unsigned long addr, unsigned int esr,
 	if (is_el1_permission_fault(addr, esr, regs)) {
 		if (esr & ESR_ELx_WNR)
 			msg = "write to read-only memory";
+		else if (is_el1_instruction_abort(esr))
+			msg = "execute from non-executable memory";
 		else
 			msg = "read from unreadable memory";
 	} else if (addr < PAGE_SIZE) {
@@ -454,8 +451,8 @@ static int __kprobes do_page_fault(unsigned long addr, unsigned int esr,
 	const struct fault_info *inf;
 	struct mm_struct *mm = current->mm;
 	vm_fault_t fault, major = 0;
-	unsigned long vm_flags = VM_READ | VM_WRITE;
-	unsigned int mm_flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
+	unsigned long vm_flags = VM_ACCESS_FLAGS;
+	unsigned int mm_flags = FAULT_FLAG_DEFAULT;
 
 	if (kprobe_page_fault(regs, esr))
 		return 0;
@@ -500,11 +497,11 @@ static int __kprobes do_page_fault(unsigned long addr, unsigned int esr,
 	 * validly references user space from well defined areas of the code,
 	 * we can bug out early if this is from code which shouldn't.
 	 */
-	if (!down_read_trylock(&mm->mmap_sem)) {
+	if (!mmap_read_trylock(mm)) {
 		if (!user_mode(regs) && !search_exception_tables(regs->pc))
 			goto no_context;
 retry:
-		down_read(&mm->mmap_sem);
+		mmap_read_lock(mm);
 	} else {
 		/*
 		 * The above down_read_trylock() might have succeeded in which
@@ -513,7 +510,7 @@ retry:
 		might_sleep();
 #ifdef CONFIG_DEBUG_VM
 		if (!user_mode(regs) && !search_exception_tables(regs->pc)) {
-			up_read(&mm->mmap_sem);
+			mmap_read_unlock(mm);
 			goto no_context;
 		}
 #endif
@@ -522,30 +519,20 @@ retry:
 	fault = __do_page_fault(mm, addr, mm_flags, vm_flags);
 	major |= fault & VM_FAULT_MAJOR;
 
-	if (fault & VM_FAULT_RETRY) {
-		/*
-		 * If we need to retry but a fatal signal is pending,
-		 * handle the signal first. We do not need to release
-		 * the mmap_sem because it would already be released
-		 * in __lock_page_or_retry in mm/filemap.c.
-		 */
-		if (fatal_signal_pending(current)) {
-			if (!user_mode(regs))
-				goto no_context;
-			return 0;
-		}
+	/* Quick path to respond to signals */
+	if (fault_signal_pending(fault, regs)) {
+		if (!user_mode(regs))
+			goto no_context;
+		return 0;
+	}
 
-		/*
-		 * Clear FAULT_FLAG_ALLOW_RETRY to avoid any risk of
-		 * starvation.
-		 */
+	if (fault & VM_FAULT_RETRY) {
 		if (mm_flags & FAULT_FLAG_ALLOW_RETRY) {
-			mm_flags &= ~FAULT_FLAG_ALLOW_RETRY;
 			mm_flags |= FAULT_FLAG_TRIED;
 			goto retry;
 		}
 	}
-	up_read(&mm->mmap_sem);
+	mmap_read_unlock(mm);
 
 	/*
 	 * Handle the "normal" (no error) case first.
@@ -654,11 +641,13 @@ static int do_sea(unsigned long addr, unsigned int esr, struct pt_regs *regs)
 
 	inf = esr_to_fault_info(esr);
 
-	/*
-	 * Return value ignored as we rely on signal merging.
-	 * Future patches will make this more robust.
-	 */
-	apei_claim_sea(regs);
+	if (user_mode(regs) && apei_claim_sea(regs) == 0) {
+		/*
+		 * APEI claimed this as a firmware-first notification.
+		 * Some processing deferred to task_work before ret_to_user().
+		 */
+		return 0;
+	}
 
 	if (esr & ESR_ELx_FnV)
 		siaddr = NULL;
@@ -736,8 +725,7 @@ static const struct fault_info fault_info[] = {
 	{ do_bad,		SIGKILL, SI_KERNEL,	"unknown 63"			},
 };
 
-asmlinkage void __exception do_mem_abort(unsigned long addr, unsigned int esr,
-					 struct pt_regs *regs)
+void do_mem_abort(unsigned long addr, unsigned int esr, struct pt_regs *regs)
 {
 	const struct fault_info *inf = esr_to_fault_info(esr);
 
@@ -753,43 +741,21 @@ asmlinkage void __exception do_mem_abort(unsigned long addr, unsigned int esr,
 	arm64_notify_die(inf->name, regs,
 			 inf->sig, inf->code, (void __user *)addr, esr);
 }
+NOKPROBE_SYMBOL(do_mem_abort);
 
-asmlinkage void __exception do_el0_irq_bp_hardening(void)
+void do_el0_irq_bp_hardening(void)
 {
 	/* PC has already been checked in entry.S */
 	arm64_apply_bp_hardening();
 }
+NOKPROBE_SYMBOL(do_el0_irq_bp_hardening);
 
-asmlinkage void __exception do_el0_ia_bp_hardening(unsigned long addr,
-						   unsigned int esr,
-						   struct pt_regs *regs)
+void do_sp_pc_abort(unsigned long addr, unsigned int esr, struct pt_regs *regs)
 {
-	/*
-	 * We've taken an instruction abort from userspace and not yet
-	 * re-enabled IRQs. If the address is a kernel address, apply
-	 * BP hardening prior to enabling IRQs and pre-emption.
-	 */
-	if (!is_ttbr0_addr(addr))
-		arm64_apply_bp_hardening();
-
-	local_daif_restore(DAIF_PROCCTX);
-	do_mem_abort(addr, esr, regs);
-}
-
-
-asmlinkage void __exception do_sp_pc_abort(unsigned long addr,
-					   unsigned int esr,
-					   struct pt_regs *regs)
-{
-	if (user_mode(regs)) {
-		if (!is_ttbr0_addr(instruction_pointer(regs)))
-			arm64_apply_bp_hardening();
-		local_daif_restore(DAIF_PROCCTX);
-	}
-
 	arm64_notify_die("SP/PC alignment exception", regs,
 			 SIGBUS, BUS_ADRALN, (void __user *)addr, esr);
 }
+NOKPROBE_SYMBOL(do_sp_pc_abort);
 
 int __init early_brk64(unsigned long addr, unsigned int esr,
 		       struct pt_regs *regs);
@@ -872,8 +838,7 @@ NOKPROBE_SYMBOL(debug_exception_exit);
 #ifdef CONFIG_ARM64_ERRATUM_1463225
 DECLARE_PER_CPU(int, __in_cortex_a76_erratum_1463225_wa);
 
-static int __exception
-cortex_a76_erratum_1463225_debug_handler(struct pt_regs *regs)
+static int cortex_a76_erratum_1463225_debug_handler(struct pt_regs *regs)
 {
 	if (user_mode(regs))
 		return 0;
@@ -892,16 +857,15 @@ cortex_a76_erratum_1463225_debug_handler(struct pt_regs *regs)
 	return 1;
 }
 #else
-static int __exception
-cortex_a76_erratum_1463225_debug_handler(struct pt_regs *regs)
+static int cortex_a76_erratum_1463225_debug_handler(struct pt_regs *regs)
 {
 	return 0;
 }
 #endif /* CONFIG_ARM64_ERRATUM_1463225 */
+NOKPROBE_SYMBOL(cortex_a76_erratum_1463225_debug_handler);
 
-asmlinkage void __exception do_debug_exception(unsigned long addr_if_watchpoint,
-					       unsigned int esr,
-					       struct pt_regs *regs)
+void do_debug_exception(unsigned long addr_if_watchpoint, unsigned int esr,
+			struct pt_regs *regs)
 {
 	const struct fault_info *inf = esr_to_debug_fault_info(esr);
 	unsigned long pc = instruction_pointer(regs);
